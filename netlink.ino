@@ -67,7 +67,8 @@ byte    dataByte = 0; //accumulates the bits of the signal
 byte    dataMask = 16; //rotates, so allows nybbles to be reversed
 byte    nosBits = 0; //counts the shifted bits in the dataByte
 byte    manchester[11]; //storage array for the data accumulated via manchester format
-boolean notBCD;    // check that a nybble has not been received that is outside of range 0-9 -reset after each readi
+boolean notBCD;    // check that a nybble has not been received that is outside of range 0-9 -reset after each reading
+boolean ledState = 0;
 
 
 double  avWindspeed = 0.0;
@@ -90,6 +91,11 @@ int freeRam ()
   extern int __heap_start, *__brkval; 
   int v; 
   return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
+
+void invertLed() {
+  ledState = !ledState;
+  digitalWrite (ledPin, ledState);
 }
 
 /**************************************************************************/
@@ -170,14 +176,14 @@ void setup(){
   pinMode(ledPin, OUTPUT);
   pinMode(RxPin, INPUT);
   pinMode(AGCPin, OUTPUT);
-  digitalWrite(ledPin, HIGH);
+  invertLed();
   digitalWrite(AGCPin, AGC_ON);
   delay(100);//heart beat
-  digitalWrite(ledPin, LOW);
+  invertLed();
   delay(100);//heart beat
-  digitalWrite(ledPin, HIGH);
+  invertLed();
   delay(100);//heart beat
-  digitalWrite(ledPin, LOW);
+  invertLed();
   headerHits=0;
   /* Initialise the sensor */
   if(!bmp.begin())
@@ -250,7 +256,7 @@ void loop(){
         signal = signal^1;
         //Serial.print(logic,BIN);  //debug data stream in binary
         if (!firstZero){ //if this is the first 0-1 data transition then is the sync 0
-          digitalWrite(ledPin,1); //data processing begins, first though chew up remaining header
+          invertLed();     //data processing begins, first though chew up remaining header
           firstZero = true; //flag that legit data has begun
           //VIP OS Seems to put the Synch '0' bit into the data, as it causes the rest to align onto byte boundaries
           dataByte = B00000000; // set the byte as 1's (just reflects the header bit that have preceded the trigger bit=0)
@@ -293,7 +299,6 @@ void loop(){
       Serial.println (manchester[0], HEX);
       rssi = analogRead(RSSIPin);
       if (manchester[0]==0xaf){ //detected the Thermometer and Hygrometer
-        hexBank();
         if(ValidCS(16)){
           thermom();
         }
@@ -322,7 +327,7 @@ void loop(){
   }
   Serial.print ("Mem:");
   Serial.println (freeRam());
-  digitalWrite(ledPin,0); //data processing ends, look for another header
+  invertLed();               //data processing ends, look for another header
   wdt_reset();
 } //end of main loop
 
@@ -398,19 +403,21 @@ void rain(){
   Serial.print("Rain Rate ");
   Serial.print(rainRate);
   Serial.println(" mm/hr ");
-  battery();
 
   addFloatParam ("rainTotal", rainTotal,  outputString, 0);
-  strcat(outputString, ":");
-  if (notBCD) strcat (outputString, "F:");  
-  Serial.println (outputString);
-  sendData (outputString);
+  addFloatParam ("rainBattery", (float)battery(),  outputString,2 );
+
+  if (notBCD) invertLed();
+  else sendData (outputString);
+  
 }
 
-void battery(){
-  byte batt= nyb(7);
+int battery(){
+  byte batt= nyb(4);
   Serial.print("battery:");
   Serial.println (batt, HEX);
+  if (batt & 0x4) return (0);
+  else return (1);
 }
 
 void addFloatParam (char *param, float value,  char *theString, int type) {
@@ -458,7 +465,7 @@ void anemom(){
   Serial.print(gustWindspeed);
   Serial.print(" km/hr, Direction: ");
   Serial.println(windDirection);
-  battery();
+
 
 // 180
 
@@ -467,13 +474,12 @@ void anemom(){
   addFloatParam ("windDir", windDirection,  outputString,1 );
   addFloatParam ("gustWindSpeed", gustWindspeed,  outputString,1 ); 
   addFloatParam ("barometer", barometer,  outputString,1 );
+  addFloatParam ("windBattery", (float)battery(),  outputString,1 );
   addFloatParam ("rssi", rssi,  outputString,2 );
-hexBankString (dbgString);
-strcat (outputString, dbgString);
-strcat (outputString, ":");
-if (notBCD) strcat (outputString, "F:");    
-  Serial.println (outputString);  
-  sendData (outputString);
+
+  if (notBCD) invertLed();
+  else sendData (outputString);
+ 
 
 
 }
@@ -507,13 +513,13 @@ void thermom(){
   humidity = (nyb(14)*10)+nyb(13);
   Serial.print(humidity);
   Serial.println("% Rel");
-  battery();
 
   addFloatParam ("humidity", humidity,  outputString, 0);
-  addFloatParam ("temperature", temperature,  outputString, 2);
-  if (notBCD) strcat (outputString, "F:");  
-  Serial.println (outputString);  
-  sendData (outputString);
+  addFloatParam ("temperature", temperature,  outputString, 1);
+     addFloatParam ("outTempBattery", (float)battery(),  outputString,2 );
+  if (notBCD) invertLed();
+  else sendData (outputString);
+  
 
 }
 
@@ -539,9 +545,11 @@ void uv(){
 
   addFloatParam ("uvIndex", humidity,  outputString, 0);
   strcat(outputString, ":");
-  if (notBCD) strcat (outputString, "F:");  
-  Serial.println (outputString);  
-  sendData (outputString);
+  if (notBCD) invertLed();
+  else {
+    Serial.println (outputString);  
+    sendData (outputString);
+  }  
 
 }
 
